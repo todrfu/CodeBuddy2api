@@ -1477,9 +1477,7 @@
                     <div class="form-group">
                         <label class="form-label" for="testModel">模型</label>
                         <select id="testModel" class="form-input">
-                            <option value="auto-chat">auto-chat</option>
-                            <option value="claude-4.0">claude-4.0</option>
-                            <option value="gpt-5">gpt-5</option>
+                            <option value="">模型列表加载中…</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -1761,6 +1759,8 @@
                 loadDashboard();
             } else if (tabId === 'credentials') {
                 loadCredentials();
+            } else if (tabId === 'api-test') {
+                if (isAuthenticated) { loadTestModels(); }
             } else if (tabId === 'settings') {
                 loadSettings();
             }
@@ -2555,6 +2555,32 @@
             }
         }
 
+        // 加载真实可用模型列表（GET /codebuddy/v1/models）填充 API 测试下拉
+        async function loadTestModels() {
+            const select = document.getElementById('testModel');
+            const previous = select.value;
+            let models = [];
+            try {
+                const response = await fetch('/codebuddy/v1/models', { headers: getAuthHeaders() });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                models = (await response.json()).data.map(m => m.id).filter(Boolean);
+            } catch (e) {
+                console.warn('模型列表拉取失败，回退默认:', e);
+                models = ['glm-5.3', 'glm-5.3-flash', 'deepseek-v4-flash'];
+            }
+            select.innerHTML = '';
+            models.forEach(id => {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = id;
+                select.appendChild(opt);
+            });
+            // 尽量保持用户之前的选择
+            if (previous && models.includes(previous)) {
+                select.value = previous;
+            }
+        }
+
         // API测试功能
         async function testAPI() {
             const model = document.getElementById('testModel').value;
@@ -2977,7 +3003,16 @@
                 const data = await response.json();
                 const settings = data.settings;
                 const labels = data.labels;
-                
+
+                // 同时拉取实际生效的模型列表（GET /codebuddy/v1/models）
+                let liveModels = [];
+                try {
+                    const mResp = await fetch('/codebuddy/v1/models', { headers: getAuthHeaders() });
+                    if (mResp.ok) {
+                        liveModels = (await mResp.json()).data.map(m => m.id).filter(Boolean);
+                    }
+                } catch (e) { /* 拉取失败仅省略提示，不影响配置加载 */ }
+
                 // 清空加载提示
                 settingsForm.innerHTML = '';
 
@@ -2986,13 +3021,13 @@
                     if (settings.hasOwnProperty(key)) {
                         const formGroup = document.createElement('div');
                         formGroup.className = 'form-group';
-                        
+
                         const label = document.createElement('label');
                         label.className = 'form-label';
                         label.htmlFor = `setting_${key}`;
                         // 使用中文标签，如果不存在则回退到原始key
                         label.textContent = labels[key] || key;
-                        
+
                         const input = document.createElement('input');
                         input.type = (key.toLowerCase().includes('password')) ? 'password' : 'text';
                         input.id = `setting_${key}`;
@@ -3001,6 +3036,17 @@
 
                         formGroup.appendChild(label);
                         formGroup.appendChild(input);
+
+                        // 可用模型列表：回显当前实际生效值（对接 /v1/models）
+                        if (key === 'CODEBUDDY_MODELS') {
+                            const hint = document.createElement('div');
+                            hint.style.cssText = 'font-size:12px;color:#8a94a6;margin-top:4px;word-break:break-all;line-height:1.6;';
+                            hint.textContent = liveModels.length
+                                ? `当前实际生效（GET /codebuddy/v1/models，共 ${liveModels.length} 个）：${liveModels.join(', ')}。修改保存后立即热加载。`
+                                : '修改保存后立即热加载；实际生效列表见 GET /codebuddy/v1/models。';
+                            formGroup.appendChild(hint);
+                        }
+
                         settingsForm.appendChild(formGroup);
                     }
                 }
