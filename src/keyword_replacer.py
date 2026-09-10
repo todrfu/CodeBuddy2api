@@ -20,12 +20,17 @@ def apply_keyword_replacement(text: str) -> str:
     if not isinstance(text, str):
         return text
 
-    # 定义替换规则
+    # 定义替换规则（长词优先，避免子串误替换）
     replacements = {
         "Claude Code": "CodeBuddy Code",
         "Anthropic's official CLI for Claude": "Tencent's official CLI for CodeBuddy",
+        "OpenAI Codex": "CodeBuddy",
+        "Codex CLI": "CodeBuddy CLI",
+        "Codex": "CodeBuddy",
+        "ChatGPT": "CodeBuddy",
         "Claude": "CodeBuddy",
         "Anthropic": "Tencent",
+        "OpenAI": "Tencent",
         "https://github.com/anthropics/claude-code/issues": "https://cnb.cool/codebuddy/codebuddy-code/-/issues"
     }
 

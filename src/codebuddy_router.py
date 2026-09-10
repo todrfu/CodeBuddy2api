@@ -631,9 +631,10 @@ class RequestProcessor:
             system_msg = {"role": "system", "content": "You are a helpful assistant."}
             payload["messages"] = [system_msg] + messages
         
-        # 应用关键词替换
+        # 应用关键词替换 - 覆盖所有消息角色，防止客户端指纹触发上游11128风控
+        # （Codex 使用 developer 角色，部分客户端把标识放在 user 消息中，仅处理 system 会漏掉）
         for msg in payload.get("messages", []):
-            if msg.get("role") == "system":
+            if msg.get("role") in ("system", "developer", "user"):
                 msg["content"] = apply_keyword_replacement_to_system_message(msg.get("content"))
         
         return payload
