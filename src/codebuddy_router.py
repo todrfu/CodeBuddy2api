@@ -636,6 +636,12 @@ class RequestProcessor:
         for msg in payload.get("messages", []):
             if msg.get("role") in ("system", "developer", "user"):
                 msg["content"] = apply_keyword_replacement_to_system_message(msg.get("content"))
+
+        # 规范化消息：保证每条消息都有 content 字段，避免上游因 OpenAI 风格的
+        # “assistant 仅带 tool_calls” / “tool 仅带 tool_call_id” 而返回 400
+        for msg in payload.get("messages", []):
+            if "content" not in msg or msg["content"] is None:
+                msg["content"] = ""
         
         return payload
     
@@ -644,20 +650,35 @@ class RequestProcessor:
         """验证请求参数"""
         if not isinstance(request_body, dict):
             raise HTTPException(status_code=400, detail="Request body must be a JSON object")
-        
+
         messages = request_body.get("messages")
         if not messages or not isinstance(messages, list):
             raise HTTPException(status_code=400, detail="Messages field is required and must be an array")
-        
+
         if not messages:
             raise HTTPException(status_code=400, detail="At least one message is required")
-        
+
         # 验证消息格式
+        # 注意：assistant 角色在 OpenAI 规范下可以只携带 tool_calls（不写 content）；
+        # tool 角色按官方规范也允许只带 tool_call_id。Warp /agent、Codex 等编程 Agent
+        # 的工具调用循环中这两类消息是常态，原校验过严会直接 400 拒掉整轮对话。
         for i, msg in enumerate(messages):
             if not isinstance(msg, dict):
                 raise HTTPException(status_code=400, detail=f"Message {i} must be an object")
-            if "role" not in msg or "content" not in msg:
-                raise HTTPException(status_code=400, detail=f"Message {i} must have 'role' and 'content' fields")
+            if "role" not in msg:
+                raise HTTPException(status_code=400, detail=f"Message {i} must have 'role' field")
+
+            role = msg.get("role")
+            has_content = "content" in msg and msg["content"] is not None
+            has_tool_calls = isinstance(msg.get("tool_calls"), list) and msg.get("tool_calls")
+            has_tool_call_id = isinstance(msg.get("tool_call_id"), str) and msg.get("tool_call_id")
+
+            # 至少要有 content、tool_calls、tool_call_id 三者之一，避免空消息
+            if not (has_content or has_tool_calls or has_tool_call_id):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Message {i} (role={role}) must have 'content', 'tool_calls' or 'tool_call_id'",
+                )
 
 class CredentialManager:
     """认证信息管理器 - 支持 API Key 和 Token 两种模式"""
